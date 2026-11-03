@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+psycopg2-binary
+pydantic-settings
+PyJWT
+bcrypt
+python-multipart
+pydicom>=3.0
+pytest
+httpx

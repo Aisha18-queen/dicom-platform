@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+data/
+.venv/
+node_modules/
+*.pt
+*.pth
+sample_data/
+dev.db
+test.db
