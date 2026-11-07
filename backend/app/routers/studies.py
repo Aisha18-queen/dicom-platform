@@ -2,7 +2,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/studies", tags=["studies"])
 
 @router.post("", status_code=201)
 async def upload_study(
-    files: list[UploadFile],
+    files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_role("doctor", "admin")),
 ):
