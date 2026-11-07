@@ -18,7 +18,7 @@ How a file is cleaned (see _clean_dataset):
   6. Sequences (SQ)                          -> cleaned recursively
 Then PatientName and PatientID are set to a random key.
 """
-import shutil
+import shutil  # noqa: I001
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -105,9 +105,7 @@ def _clean_dataset(ds: Dataset, uid_map: dict) -> None:
         elif elem.VR == "SQ":
             for item in elem.value:
                 _clean_dataset(item, uid_map)
-        elif elem.VR == "PN":
-            elem.value = ""
-        elif elem.VR in ("DA", "DT", "TM") or tag in BLANK_TAGS:
+        elif elem.VR == "PN" or elem.VR in ("DA", "DT", "TM") or tag in BLANK_TAGS:
             elem.value = ""
         elif elem.VR == "UI" and tag not in KEEP_UIDS:
             elem.value = _remap_uids(elem.value, uid_map)
