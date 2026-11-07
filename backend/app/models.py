@@ -25,8 +25,9 @@ class Study(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(16), default="uploaded")
     file_count: Mapped[int] = mapped_column(Integer, default=0)
+    task: Mapped[str] = mapped_column(String(16), default="")  # brain_mri | liver_ct
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    # TODO later: task (brain_mri | liver_ct), random_key, result fields
+    # TODO later: random_key, result fields
 
 
 class KeyTable(Base):
