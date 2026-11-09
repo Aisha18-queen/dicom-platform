@@ -1,33 +1,15 @@
-import os
-import tempfile
 from pathlib import Path
 
-# A fresh database for every test run (so schema changes never break the tests).
-os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp(), 'test.db').as_posix()}"
-os.environ["UPLOAD_DIR"] = tempfile.mkdtemp()
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app.config import settings  # noqa: E402
-from app.database import SessionLocal  # noqa: E402
-from app.main import app  # noqa: E402
-from app.models import KeyTable  # noqa: E402
-from tests.fake_dicom import FAKE, make_fake_study  # noqa: E402
+from app.config import settings
+from app.database import SessionLocal
+from app.main import app
+from app.models import KeyTable
+from tests.fake_dicom import FAKE
+from tests.helpers import login, real_dicom_files
 
 TASK = {"task": "liver_ct"}
-
-
-def login(client, user="admin", pwd="admin"):
-    r = client.post("/auth/login", data={"username": user, "password": pwd})
-    assert r.status_code == 200
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-
-def real_dicom_files(n=2):
-    """n fake DICOM slices (fake patient DOE^JOHN, CT abdomen), ready to upload."""
-    folder = Path(tempfile.mkdtemp())
-    make_fake_study(folder, slices=n)
-    return [("files", (p.name, p.read_bytes())) for p in sorted(folder.iterdir())]
 
 
 def study_folders():
@@ -57,8 +39,8 @@ def test_upload_anonymizes_and_stores_key():
         r = c.post("/studies", headers=h, data=TASK, files=real_dicom_files(2))
         assert r.status_code == 201
         body = r.json()
-        assert body["file_count"] == 2 and body["status"] == "anonymized"
-        assert body["task"] == "liver_ct"
+        assert body["file_count"] == 2 and body["task"] == "liver_ct"
+        assert body["status"] == "queued"          # QUEUE_MODE=local in the tests
 
         study_dir = Path(settings.upload_dir) / body["study_id"]
         assert not (study_dir / "raw").exists()                      # originals deleted

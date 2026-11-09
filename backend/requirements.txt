@@ -7,5 +7,6 @@ PyJWT
 bcrypt
 python-multipart
 pydicom>=3.0
+celery[redis]
 pytest
 httpx

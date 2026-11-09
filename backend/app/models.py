@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -23,11 +23,14 @@ class Study(Base):
     __tablename__ = "studies"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # anonymized -> queued -> processing -> done | failed
     status: Mapped[str] = mapped_column(String(16), default="uploaded")
     file_count: Mapped[int] = mapped_column(Integer, default=0)
     task: Mapped[str] = mapped_column(String(16), default="")  # brain_mri | liver_ct
+    result_json: Mapped[str] = mapped_column(Text, default="")  # the worker's answer (no patient data)
+    error_code: Mapped[str] = mapped_column(String(64), default="")
+    error_message: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    # TODO later: random_key, result fields
 
 
 class KeyTable(Base):
@@ -46,10 +49,11 @@ class KeyTable(Base):
 
 
 class AuditLog(Base):
-    """Audit trail. Must NEVER contain PHI: only ids and action names."""
+    """Audit trail. Must NEVER contain PHI: only ids and action names.
+    user_id 0 means "the system" (for example a worker delivering a result)."""
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
-    action: Mapped[str] = mapped_column(String(32))  # login | upload | view | export
+    action: Mapped[str] = mapped_column(String(32))  # login | upload | view | export | result
     object_id: Mapped[str] = mapped_column(String(36), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

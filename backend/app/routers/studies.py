@@ -2,14 +2,15 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from .. import audit
+from .. import audit, results
 from ..anonymizer import anonymize_folder
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user, require_role
+from ..jobs import dispatch
 from ..models import KeyTable, Study, User
 from ..routing import TASKS, check_task, detect_task, read_study_info
 from ..upload_validation import check_all_dicom, extract_zip, save_upload
@@ -75,6 +76,7 @@ def list_tasks(_: User = Depends(get_current_user)):
 
 @router.post("", status_code=201)
 async def upload_study(
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     task: str = Form(...),
     db: Session = Depends(get_db),
@@ -114,12 +116,27 @@ async def upload_study(
     ))
     db.commit()
     audit.log(db, user.id, "upload", study_id)  # ids only, never patient data
-    # NEXT STEP: send anonymized files + random key + task to the compute zone (Celery)
+
+    # 5. Hand the anonymized study (and only that, with its random key) to the worker
+    status = "anonymized"
+    try:
+        status = dispatch(task, result.study_key, anon_dir, background_tasks)
+        if status != "anonymized":
+            db.get(Study, study_id).status = status
+            db.commit()
+    except Exception:
+        study = db.get(Study, study_id)
+        study.status = "failed"
+        study.error_code = "QUEUE_UNAVAILABLE"
+        study.error_message = "The analysis could not be started. Please try again later."
+        db.commit()
+        status = "failed"
+
     return {
         "study_id": study_id,
         "task": task,
         "file_count": result.file_count,
-        "status": "anonymized",
+        "status": status,
         "warnings": routing_warnings + result.warnings,
     }
 
@@ -133,10 +150,24 @@ def list_studies(db: Session = Depends(get_db), user: User = Depends(get_current
             for s in q.all()]
 
 
-@router.get("/{study_id}")
-def get_study(study_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def _owned_study(db: Session, study_id: str, user: User) -> Study:
     s = db.get(Study, study_id)
     if not s or (user.role != "admin" and s.owner_id != user.id):
         raise HTTPException(404, "Study not found")
+    return s
+
+
+@router.get("/{study_id}")
+def get_study(study_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Status of one study. Poll this every few seconds while it is queued or processing."""
+    s = _owned_study(db, study_id, user)
     audit.log(db, user.id, "view", study_id)
     return {"id": s.id, "task": s.task, "status": s.status, "file_count": s.file_count}
+
+
+@router.get("/{study_id}/result")
+def get_result(study_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The analysis result. Always the same shape; "result" is null until status is "done"."""
+    s = _owned_study(db, study_id, user)
+    audit.log(db, user.id, "view", study_id)
+    return results.result_view(s)

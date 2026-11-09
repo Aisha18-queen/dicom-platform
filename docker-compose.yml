@@ -1,5 +1,7 @@
-# Stage 1: everything on one machine. Later this is split into
-# compose.clinical.yml and compose.compute.yml (two zones).
+# Everything on one machine, with the two zones simulated by what each container can see:
+#   clinical zone : db, backend (sees ./data, including uploads and the key table)
+#   compute zone  : redis, worker-* (see ONLY ./data/transfer, never the uploads)
+# Later this is split into compose.clinical.yml and compose.compute.yml (two Azure VMs).
 services:
   db:
     image: postgres:16
@@ -15,18 +17,60 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: ./backend
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_DIR: /data/uploads
+      TRANSFER_DIR: /data/transfer
+      QUEUE_MODE: celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      WORKER_SECRET: ${WORKER_SECRET:-dev-worker-secret}
     volumes:
       - ./data:/data
     ports:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-mri:
+    build: ./worker
+    command: celery -A worker.celery_app worker -Q brain_mri --loglevel=info
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      BACKEND_URL: http://backend:8000
+      TRANSFER_DIR: /data/transfer
+      WORKER_SECRET: ${WORKER_SECRET:-dev-worker-secret}
+    volumes:
+      - ./data/transfer:/data/transfer
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-liver:
+    build: ./worker
+    command: celery -A worker.celery_app worker -Q liver_ct --loglevel=info
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      BACKEND_URL: http://backend:8000
+      TRANSFER_DIR: /data/transfer
+      WORKER_SECRET: ${WORKER_SECRET:-dev-worker-secret}
+    volumes:
+      - ./data/transfer:/data/transfer
+    depends_on:
+      redis:
         condition: service_healthy
 
 volumes:

@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 from . import models
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, studies
+from .routers import auth, internal, studies
 from .security import hash_password
 
 
@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DICOM Anonymization & AI Platform", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -33,14 +34,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.include_router(auth.router)
 app.include_router(studies.router)
+app.include_router(internal.router)
+
 
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse("/docs")
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
